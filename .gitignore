@@ -1,0 +1,14 @@
+# Ignore the folder where npm installs packages
+node_modules/
+
+# Ignore environment variables (this often has your DB password, API keys, etc.)
+.env
+
+# Ignore OS/system junk files (optional but good practice)
+.DS_Store
+Thumbs.db
+
+# Logs and debug files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
