@@ -8,7 +8,6 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 4000;
 
-
 // 🧩 Database connection pool
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -18,39 +17,56 @@ const pool = mysql.createPool({
 });
 
 // 🏠 Home route
-app.get('/', (req, res) => {
-  res.send('🚀 Crypto Price API is running! Try /api/prices or POST /api/refresh');
+app.get("/", (req, res) => {
+  res.send("🚀 Crypto Price API is running! Try /api/prices or POST /api/refresh");
 });
 
 // 📈 GET - fetch all prices
-app.get('/api/prices', async (req, res) => {
+app.get("/api/prices", async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM prices ORDER BY last_updated DESC');
+    const [rows] = await pool.query("SELECT * FROM prices ORDER BY last_updated DESC");
     res.json(rows);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to fetch prices' });
+    res.status(500).json({ error: "Failed to fetch prices" });
   }
 });
 
 // 🔄 POST - refresh prices from external API
 app.post("/api/refresh", async (req, res) => {
   try {
+    // Fetch data from CoinGecko
     const url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,dogecoin&vs_currencies=usd";
     const { data } = await axios.get(url);
+
+    // Prepare records
     const prices = [
-      ["BTC", data.bitcoin.usd, new Date()],
-      ["ETH", data.ethereum.usd, new Date()],
-      ["DOGE", data.dogecoin.usd, new Date()]
+      ["Bitcoin", "BTC", data.bitcoin.usd, new Date()],
+      ["Ethereum", "ETH", data.ethereum.usd, new Date()],
+      ["Dogecoin", "DOGE", data.dogecoin.usd, new Date()]
     ];
-    await db.query("TRUNCATE TABLE crypto_prices");
-    await db.query("INSERT INTO crypto_prices (symbol, price_usd, last_updated) VALUES ?", [prices]);
-    res.json({ message: "Prices refreshed successfully", prices });
+
+    // Insert new records (no truncate → keeps history)
+    for (const [name, symbol, price, last_updated] of prices) {
+      await pool.query(
+        "INSERT INTO prices (name, symbol, price_usd, last_updated) VALUES (?, ?, ?, ?)",
+        [name, symbol, price, last_updated]
+      );
+    }
+
+    res.json({ message: "✅ Prices refreshed successfully", prices });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to refresh prices" });
   }
 });
+
+// 🚀 Start server
+app.listen(port, () => {
+  console.log(`✅ Connected to database`);
+  console.log(`🚀 API running on http://localhost:${port}`);
+});
+
 
 // 🔄 POST - refresh prices from external API
 // app.post('/api/refresh', async (req, res) => {
@@ -79,9 +95,3 @@ app.post("/api/refresh", async (req, res) => {
 //     res.status(500).json({ error: 'Failed to refresh prices' });
 //   }
 // });
-
-// 🚀 Start server
-app.listen(port, () => {
-  console.log(`✅ Connected to database`);
-  console.log(`🚀 API running on http://localhost:${port}`);
-});
