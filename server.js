@@ -36,7 +36,7 @@ app.get("/", (req, res) => {
 // 📈 GET - fetch all prices
 app.get("/api/prices", async (req, res) => {
   try {
-    const [rows] = await pool.query("SELECT * FROM prices ORDER BY last_updated DESC");
+    const [rows] = await pool.query("SELECT * FROM latest_prices ORDER BY last_updated DESC");
     res.json(rows);
   } catch (err) {
     console.error(err);
@@ -44,31 +44,56 @@ app.get("/api/prices", async (req, res) => {
   }
 });
 
-// 🔄 POST - refresh prices from external API
+// 📈 GET - fetch price history (for charts)
+app.get("/api/history", verifyApiKey, async (req, res) => {
+  const symbol = req.query.symbol || "BTC";
+  try {
+    const [rows] = await pool.query(
+      "SELECT price_usd, last_updated FROM prices WHERE symbol = ? ORDER BY last_updated ASC",
+      [symbol]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error("❌ Error fetching history:", err);
+    res.status(500).json({ error: "Failed to fetch history" });
+  }
+});
+
+// 🔄 POST - refresh prices (protected by API key)
 app.post("/api/refresh", verifyApiKey, async (req, res) => {
   try {
-    // Fetch data from CoinGecko
+    // 🪙 Fetch from CoinGecko API
     const url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,dogecoin&vs_currencies=usd";
     const { data } = await axios.get(url);
 
-    // Prepare records
     const prices = [
       ["Bitcoin", "BTC", data.bitcoin.usd, new Date()],
       ["Ethereum", "ETH", data.ethereum.usd, new Date()],
-      ["Dogecoin", "DOGE", data.dogecoin.usd, new Date()]
+      ["Dogecoin", "DOGE", data.dogecoin.usd, new Date()],
     ];
 
-    // Insert new records (no truncate → keeps history)
+    // 🗃️ Insert into prices history
+    await pool.query(
+      "INSERT INTO prices (name, symbol, price_usd, last_updated) VALUES ?",
+      [prices]
+    );
+
+    // 🔁 Upsert into latest_prices (fast current snapshot)
     for (const [name, symbol, price, last_updated] of prices) {
       await pool.query(
-        "INSERT INTO prices (name, symbol, price_usd, last_updated) VALUES (?, ?, ?, ?)",
-        [name, symbol, price, last_updated]
+        `INSERT INTO latest_prices (symbol, name, price_usd, last_updated)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           price_usd = VALUES(price_usd),
+           last_updated = VALUES(last_updated),
+           name = VALUES(name)`,
+        [symbol, name, price, last_updated]
       );
     }
 
-    res.json({ message: "✅ Prices refreshed successfully", prices });
+    res.json({ message: "✅ Prices refreshed successfully", updated: prices });
   } catch (err) {
-    console.error(err);
+    console.error("❌ Error refreshing prices:", err);
     res.status(500).json({ error: "Failed to refresh prices" });
   }
 });
