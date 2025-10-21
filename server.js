@@ -5,6 +5,18 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 dotenv.config();
 
+// API Key Middleware 
+const verifyApiKey = (req, res, next) => {
+  const clientKey = req.headers['x-api-key'];
+
+  if (!clientKey || clientKey !== process.env.API_KEY) {
+    return res.status(403).json({ error: "Unauthorized: Invalid API key" });
+  }
+
+  // Key is valid → move on to next middleware or route
+  next();
+};
+
 const app = express();
 const port = process.env.PORT || 4000;
 
@@ -33,7 +45,7 @@ app.get("/api/prices", async (req, res) => {
 });
 
 // 🔄 POST - refresh prices from external API
-app.post("/api/refresh", async (req, res) => {
+app.post("/api/refresh", verifyApiKey, async (req, res) => {
   try {
     // Fetch data from CoinGecko
     const url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,dogecoin&vs_currencies=usd";
